@@ -9,25 +9,23 @@
 <title>Chicho Decat · Gato MGMT</title>
 <meta name="description" content="Chicho Decat, bass player, producer and music manager in Berlin. Records, sessions, videos and management projects by Gato MGMT.">
 <style>
-@font-face{font-family:'Gochi Hand';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/gochi-hand-latin-400-normal.woff2) format('woff2')}
-@font-face{font-family:'Patrick Hand';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/patrick-hand-latin-400-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
-@font-face{font-family:'Patrick Hand';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/patrick-hand-latin-ext-400-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
-.legal a{color:inherit}
-.legal a:hover{color:#fff}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/archivo-latin-400-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/archivo-latin-600-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:800;font-display:swap;src:url(/fonts/archivo-latin-800-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/archivo-latin-ext-400-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/archivo-latin-ext-600-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:800;font-display:swap;src:url(/fonts/archivo-latin-ext-800-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0,U+2C60-2C7F,U+A720-A7FF}
 </style>
 <style>
 /* VOICE  personal portfolio with vintage print texture: gig poster on a record shop wall
    IDEA   a flyposted gig poster up top, then the crate wall: produced records face out, sessions in the crates
    PICTURE live photo behind the title, then the cover grid; each sleeve turns into a player
    COLOUR 14o brand on black: white ink, violet #4910bc, cyan, pink and yellow accents
-   TYPE   Gochi Hand marker caps for headings, Patrick Hand for text, to match the hand-drawn logo
+   TYPE   Archivo 800 headings, Archivo 400/600 text (sober, until the custom font)
    LAYOUT full-bleed photo hero with title in its dark left side, shelf of produced work, sticky filters, crate grid */
-:root{color-scheme:dark;--bg:#0a0a0a;--ink:#f2f2f2;--mute:#9b9b9b;--line:#2a2a2a;--card:#161616;--acc:#9a7bff;--vio:#4910bc;--cy:#0df2f2;--pk:#ff819e;--yl:#f5f53d;--gold:#d9a23a;--D:'Anton',Impact,sans-serif;--T:'Courier Prime',monospace}
-:root[data-theme=light]{color-scheme:dark}
-:root[data-theme=dark]{color-scheme:dark}
-*{box-sizing:border-box;min-width:0}
+:root{color-scheme:dark;--bg:#0a0a0a;--ink:#f2f2f2;--mute:#9b9b9b;--line:#2a2a2a;--card:#161616;--acc:#9a7bff;--vio:#4910bc;--cy:#0df2f2;--pk:#ff819e;--yl:#f5f53d;--gold:#d9a23a;--D:'Archivo',sans-serif;--T:'Archivo',sans-serif;min-width:0}
 html{scroll-padding-top:80px}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Patrick Hand",cursive;overflow-x:clip}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 'Archivo',sans-serif;overflow-x:clip}
 a{color:inherit}
 .wrap{max-width:1240px;margin:0 auto;padding-inline:max(5vw,16px)}
 .top{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:18px;flex-wrap:wrap}
@@ -47,7 +45,6 @@ a{color:inherit}
 .hero-txt{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;justify-content:center;padding-bottom:160px}
 h1{font-family:var(--D);font-weight:400;font-size:clamp(52px,7.3vw,112px);line-height:.9;letter-spacing:.005em;text-transform:uppercase;margin:0 0 18px;max-width:7.5em;text-wrap:balance}
 .lede{max-width:38ch;color:rgba(243,234,217,.82);font-size:17px;margin:0}
-.credit{position:absolute;right:max(5vw,16px);top:120px;z-index:2;font:400 16px var(--T);color:rgba(243,234,217,.55);writing-mode:vertical-rl;transform:rotate(180deg)}
 h2{font-family:var(--D);font-weight:400;font-size:clamp(30px,4.2vw,46px);line-height:1;letter-spacing:.01em;text-transform:uppercase;margin:0}
 .grain{position:fixed;inset:-50%;z-index:50;pointer-events:none;opacity:.12;mix-blend-mode:screen;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.68' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 .sec{position:relative;padding-block:clamp(28px,4vw,56px)}
@@ -112,7 +109,7 @@ dialog::backdrop{background:rgba(10,8,8,.72);backdrop-filter:blur(3px)}
 .x{position:absolute;top:10px;right:10px;width:44px;height:44px;border-radius:0;border:2px solid var(--ink);background:var(--bg);color:var(--ink);font-size:22px;line-height:1;cursor:pointer}
 .x:focus-visible,.trk:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
 .trks{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
-.trk{display:grid;grid-template-columns:40px 28px minmax(0,1fr);gap:10px;align-items:center;width:100%;min-height:52px;padding:6px 4px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink);font:500 16px/1.3 "Patrick Hand",cursive;text-align:left;cursor:pointer;position:relative}
+.trk{display:grid;grid-template-columns:40px 28px minmax(0,1fr);gap:10px;align-items:center;width:100%;min-height:52px;padding:6px 4px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink);font:500 16px/1.3 'Archivo',sans-serif;text-align:left;cursor:pointer;position:relative}
 .trk:hover{background:var(--card)}
 .trk .pb{width:36px;height:36px;border-radius:0;background:var(--ink);color:var(--bg);display:grid;place-items:center}
 .trk .pb svg{width:14px;height:14px;fill:currentColor}
@@ -132,9 +129,9 @@ dialog::backdrop{background:rgba(10,8,8,.72);backdrop-filter:blur(3px)}
 @media(prefers-reduced-motion:reduce){.sleeve img{transition:none}}
 
 /* doodle layer: hand-drawn marker look matching the Gato MGMT logo */
-:root{--D:'Gochi Hand',cursive;--T:'Patrick Hand',cursive;--hand:255px 14px 225px 14px/14px 225px 14px 255px;--hand2:16px 4px 20px 5px/5px 18px 4px 15px}
+:root{--D:'Archivo',sans-serif;--T:'Archivo',sans-serif;--hand:255px 14px 225px 14px/14px 225px 14px 255px;--hand2:16px 4px 20px 5px/5px 18px 4px 15px}
 *{font-synthesis:none}
-body{font-family:'Patrick Hand',cursive;font-size:18px}
+body{font-family:'Archivo',sans-serif;font-size:18px}
 h1{font-size:clamp(50px,6.4vw,98px);line-height:.88;letter-spacing:0;max-width:9em;color:#fff}
 .lede{font-size:20px;color:rgba(255,255,255,.85)}
 .desc{font-size:19.5px}
@@ -197,6 +194,17 @@ body.leaving{animation:pgout .28s ease forwards}
 .vid .frame16:focus-visible{outline:3px solid var(--acc);outline-offset:4px}
 .vid .t{margin-top:10px}
 @media(max-width:600px){:root{--catH:58px}.vgrid{grid-template-columns:minmax(0,1fr)}}
+
+/* sober type until the custom font: Archivo everywhere */
+h1,h2,h3,.cat,.yearbar span,.fig b,.sheet h3{font-weight:800!important;letter-spacing:-.02em!important;text-transform:none}
+body{font-size:16px}
+.lede{font-size:18px!important}
+.desc{font-size:16.5px!important}
+.t{font-size:15.5px!important;font-weight:600}
+.a,.note,.count,.when,.ctl label,.trk .no,.trk .ft,.sheet .sub,.fig span,.foot,.legal{font-size:14px!important}
+.chip,select,.roles li,.badge,.switch a,.btns button,.plink a,.sheet .open,.index a{font-size:14px!important;font-weight:600!important}
+.cat{font-size:clamp(20px,2.2vw,26px)!important}
+.btn{font-size:17px!important;font-weight:600!important}
 </style>
 </head>
 <body>
@@ -221,7 +229,6 @@ body.leaving{animation:pgout .28s ease forwards}
     <h1>Records I made and played on</h1>
     <p class="lede">Bass player and producer based in Berlin. Tap any cover to hear a preview.</p>
   </div>
-  <span class="credit">Photo: Janos Götze</span>
 </section>
 
 <main>

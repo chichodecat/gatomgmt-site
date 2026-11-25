@@ -9,24 +9,25 @@
 <title>Gato MGMT · Chicho Decat</title>
 <meta name="description" content="Chicho Decat, bass player, producer and music manager in Berlin. Music portfolio and management portfolio by Gato MGMT.">
 <style>
-@font-face{font-family:'Gochi Hand';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/gochi-hand-latin-400-normal.woff2) format('woff2')}
-@font-face{font-family:'Patrick Hand';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/patrick-hand-latin-400-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
-@font-face{font-family:'Patrick Hand';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/patrick-hand-latin-ext-400-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
-.legal a{color:inherit}
-.legal a:hover{color:#fff}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/archivo-latin-400-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/archivo-latin-600-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:800;font-display:swap;src:url(/fonts/archivo-latin-800-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:400;font-display:swap;src:url(/fonts/archivo-latin-ext-400-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:600;font-display:swap;src:url(/fonts/archivo-latin-ext-600-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:800;font-display:swap;src:url(/fonts/archivo-latin-ext-800-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0,U+2C60-2C7F,U+A720-A7FF}
 </style>
 <style>
 /* VOICE  the front door: one person, two sides, gig poster energy
    IDEA   a split flyer torn diagonally, musician left, manager right
-   PICTURE two full-bleed photos meeting on a slanted line, logo floating on the seam
-   COLOUR black ground, white ink, brand violet #4910BC for buttons and the seam
-   TYPE   Gochi Hand marker caps, Patrick Hand text
+   PICTURE two full-bleed photos meeting on a slanted cut, logo centred on top
+   COLOUR black ground, white ink, brand violet #4910BC for buttons
+   TYPE   Archivo 800 headings, Archivo 400/600 text (sober, until the custom font)
    LAYOUT two halves full height on desktop, stacked with a slanted cut on phones */
 :root{color-scheme:dark;--bg:#0a0a0a;--ink:#f2f2f2;--vio:#4910bc;--acc:#9a7bff;--hand:255px 14px 225px 14px/14px 225px 14px 255px;--cut:6vw}
 *{box-sizing:border-box;min-width:0}
 html,body{height:100%}
 html{overflow-x:clip}
-body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.55 'Patrick Hand',cursive;overflow-x:clip;animation:pgin .45s ease both}
+body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.55 'Archivo',sans-serif;overflow-x:clip;animation:pgin .45s ease both}
 body.leaving{animation:pgout .28s ease forwards}
 @keyframes pgin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes pgout{to{opacity:0;transform:translateY(-8px)}}
@@ -39,14 +40,12 @@ body.leaving{animation:pgout .28s ease forwards}
 .mgr{clip-path:polygon(calc(50% + var(--cut)) 0,100% 0,100% 100%,calc(50% - var(--cut)) 100%)}
 .mus img{object-position:30% 30%;width:62%;}
 .mgr img{object-position:50% 35%;left:auto;right:0;width:62%}
-.seam{position:absolute;inset:0;pointer-events:none;z-index:3}
-.seam line{stroke:var(--vio);stroke-width:6;vector-effect:non-scaling-stroke}
 .txt{position:relative;z-index:2;padding:0 max(4vw,20px) clamp(40px,8vh,90px);max-width:560px}
 .mgr .txt{margin-left:auto;text-align:right}
-h2{font:400 clamp(40px,5vw,72px)/.95 'Gochi Hand',cursive;margin:0 0 14px;text-shadow:0 2px 14px rgba(0,0,0,.6)}
+h2{font:400 clamp(40px,5vw,72px)/.95 'Archivo',sans-serif;margin:0 0 14px;text-shadow:0 2px 14px rgba(0,0,0,.6)}
 p{margin:0 0 22px;font-size:clamp(17px,1.4vw,20px);color:rgba(255,255,255,.9);text-shadow:0 1px 8px rgba(0,0,0,.8)}
 .mgr p{margin-left:auto}
-.btn{display:inline-flex;align-items:center;gap:10px;min-height:48px;padding:10px 22px;background:var(--vio);color:#fff;font:400 22px/1 'Gochi Hand',cursive;border-radius:var(--hand);box-shadow:3px 3px 0 #f2f2f2;transition:transform .2s,box-shadow .2s}
+.btn{display:inline-flex;align-items:center;gap:10px;min-height:48px;padding:10px 22px;background:var(--vio);color:#fff;font:400 22px/1 'Archivo',sans-serif;border-radius:var(--hand);box-shadow:3px 3px 0 #f2f2f2;transition:transform .2s,box-shadow .2s}
 .side:hover .btn,.side:focus-visible .btn{transform:translate(-2px,-2px);box-shadow:5px 5px 0 #f2f2f2}
 .side:hover img{transform:scale(1.04)}
 .side:focus-visible{outline:none}
@@ -57,12 +56,9 @@ p{margin:0 0 22px;font-size:clamp(17px,1.4vw,20px);color:rgba(255,255,255,.9);te
 .split:has(.mus:hover) .mus{clip-path:polygon(0 0,calc(56% + var(--cut)) 0,calc(56% - var(--cut)) 100%,0 100%)}
 .split:has(.mgr:hover) .mus{clip-path:polygon(0 0,calc(44% + var(--cut)) 0,calc(44% - var(--cut)) 100%,0 100%)}
 .split:has(.mgr:hover) .mgr{clip-path:polygon(calc(44% + var(--cut)) 0,100% 0,100% 100%,calc(44% - var(--cut)) 100%)}
-.split:has(.side:hover) .seam{opacity:0}
-.seam{transition:opacity .3s}
+
 .foot{position:absolute;bottom:10px;left:0;right:0;z-index:5;text-align:center;font-size:14px;color:rgba(255,255,255,.55)}
 .foot a{color:inherit}
-.cred{position:absolute;z-index:4;font-size:12px;color:rgba(255,255,255,.45);top:50%;writing-mode:vertical-rl;transform:rotate(180deg)}
-.cred.l{left:10px}
 @media(max-width:760px){
  :root{--cut:6vh}
  .split{height:auto;min-height:0;display:block;overflow:visible}
@@ -72,13 +68,24 @@ p{margin:0 0 22px;font-size:clamp(17px,1.4vw,20px);color:rgba(255,255,255,.9);te
  .mus img,.mgr img{width:100%;left:0;right:0}
  .mgr .txt{margin-left:0;text-align:left}
  .mus .txt{padding-bottom:calc(var(--cut) + 34px)}
- .seam,.cred{display:none}
+
  .split:has(.mus:hover) .mus,.split:has(.mgr:hover) .mus{clip-path:polygon(0 0,100% 0,100% calc(100% - var(--cut)),0 100%)}
  .split:has(.mus:hover) .mgr,.split:has(.mgr:hover) .mgr{clip-path:polygon(0 var(--cut),100% 0,100% 100%,0 100%)}
  .foot{position:static;padding:18px 16px 24px;background:#0a0a0a}
 }
 @media(min-width:761px){.split:has(.mus:hover) .mus,.split:has(.mgr:hover) .mgr{z-index:1}}
 @media(prefers-reduced-motion:reduce){body,body.leaving{animation:none}.side,.side img,.btn{transition:none}}
+
+/* sober type until the custom font: Archivo everywhere */
+h1,h2,h3,.cat,.yearbar span,.fig b,.sheet h3{font-weight:800!important;letter-spacing:-.02em!important;text-transform:none}
+body{font-size:16px}
+.lede{font-size:18px!important}
+.desc{font-size:16.5px!important}
+.t{font-size:15.5px!important;font-weight:600}
+.a,.note,.count,.when,.ctl label,.trk .no,.trk .ft,.sheet .sub,.fig span,.foot,.legal{font-size:14px!important}
+.chip,select,.roles li,.badge,.switch a,.btns button,.plink a,.sheet .open,.index a{font-size:14px!important;font-weight:600!important}
+.cat{font-size:clamp(20px,2.2vw,26px)!important}
+.btn{font-size:17px!important;font-weight:600!important}
 </style>
 </head>
 <body>
@@ -101,8 +108,6 @@ p{margin:0 0 22px;font-size:clamp(17px,1.4vw,20px);color:rgba(255,255,255,.9);te
       <span class="btn">Management portfolio →</span>
     </div>
   </a>
-  <svg class="seam" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line x1="54.1" y1="16" x2="44" y2="100"/></svg>
-  <span class="cred l">Photo: Janos Götze</span>
   <footer class="foot">Chicho Decat · Gato MGMT, Berlin · <a href="mailto:chicho@gatomgmt.com">chicho@gatomgmt.com</a> · <a href="/impressum">Impressum</a> · <a href="/privacy">Privacy</a></footer>
 </main>
 <script>
