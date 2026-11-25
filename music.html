@@ -25,6 +25,9 @@
    LAYOUT full-bleed photo hero with title in its dark left side, shelf of produced work, sticky filters, crate grid */
 :root{color-scheme:dark;--bg:#0a0a0a;--ink:#f2f2f2;--mute:#9b9b9b;--line:#2a2a2a;--card:#161616;--acc:#9a7bff;--vio:#4910bc;--cy:#0df2f2;--pk:#ff819e;--yl:#f5f53d;--gold:#d9a23a;--D:'Archivo',sans-serif;--T:'Archivo',sans-serif;min-width:0}
 html{scroll-padding-top:80px}
+:root[data-theme=light]{color-scheme:dark}
+:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 'Archivo',sans-serif;overflow-x:clip}
 a{color:inherit}
 .wrap{max-width:1240px;margin:0 auto;padding-inline:max(5vw,16px)}
@@ -144,12 +147,8 @@ h2::after{content:'';display:block;height:14px;margin-top:4px;background:url("da
 .switch,.chip,select,.x,.roles li,.index a,.btns button{border-width:2.5px}
 .badge,.frame,dialog,.fig,.trk .pb{border-radius:var(--hand2)}
 .frame{overflow:hidden;border-width:2.5px}
-.sleeve{border:2.5px solid #f2f2f2;border-radius:var(--hand2)}
-.grid .rel:nth-child(4n+1) .sleeve{rotate:-1deg}
-.grid .rel:nth-child(4n+2) .sleeve{rotate:.8deg}
-.grid .rel:nth-child(4n+3) .sleeve{rotate:-.5deg}
-.grid .rel:nth-child(4n) .sleeve{rotate:1.1deg}
-.fav .sleeve{border-color:var(--acc);box-shadow:5px 5px 0 var(--vio)}
+.sleeve{border:0;border-radius:0;box-shadow:6px 6px 0 #232323}
+.fav .sleeve{box-shadow:6px 6px 0 var(--vio)}
 .cats{background:var(--vio);padding:5px 7px 4px;gap:5px;border-radius:var(--hand2);filter:none;box-shadow:2px 2px 0 #000}
 .cats svg{width:24px;height:27px}
 .sheet h3 .cats{padding:4px 6px}
@@ -163,7 +162,7 @@ h2::after{content:'';display:block;height:14px;margin-top:4px;background:url("da
 /* tighter hero: content follows straight after the intro */
 .hero{min-height:clamp(420px,60vh,600px)}
 .hero-txt{justify-content:flex-end;padding-top:24px;padding-bottom:8px}
-@media(max-width:600px){.hero{min-height:0}.hero-txt{padding-bottom:8px}}
+
 #produced{padding-top:12px}
 @media(min-width:901px){.hero-img{left:auto;right:0;width:74%;object-position:45% 62%;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 22%);mask-image:linear-gradient(90deg,transparent 0,#000 22%)}}
 /* page transition between musician and manager */
@@ -182,14 +181,14 @@ body.leaving{animation:pgout .28s ease forwards}
 .cat:focus-visible{outline:3px solid var(--acc);outline-offset:3px}
 #videos,#produced{scroll-margin-top:var(--catH)}
 .vgrid{display:grid;gap:30px 22px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
-.vid .frame16{position:relative;display:block;width:100%;aspect-ratio:16/9;border:2.5px solid #f2f2f2;border-radius:var(--hand2);overflow:hidden;background:#000;padding:0;cursor:pointer;box-shadow:4px 4px 0 #1e1e1e}
-.vid:nth-child(3n+1) .frame16{rotate:-.6deg}.vid:nth-child(3n+2) .frame16{rotate:.5deg}.vid:nth-child(3n) .frame16{rotate:-.3deg}
+.vid .frame16{position:relative;display:block;width:100%;aspect-ratio:16/9;border:0;border-radius:0;overflow:hidden;background:#000;padding:0;cursor:pointer;box-shadow:6px 6px 0 #232323}
+
 .vid .frame16 img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s,filter .35s}
 .vid button.frame16:hover img{transform:scale(1.03);filter:brightness(.75)}
 .vid .frame16 iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .vid .pl{position:absolute;inset:0;margin:auto;width:64px;height:64px}
 .vid .pl circle{fill:var(--vio)}.vid .pl path{fill:#fff}
-.vid.fav .frame16{border-color:var(--acc);box-shadow:5px 5px 0 var(--vio)}
+.vid.fav .frame16{box-shadow:6px 6px 0 var(--vio)}
 .vid .cats{position:absolute;top:8px;right:8px;z-index:2}
 .vid .frame16:focus-visible{outline:3px solid var(--acc);outline-offset:4px}
 .vid .t{margin-top:10px}
@@ -205,6 +204,16 @@ body{font-size:16px}
 .chip,select,.roles li,.badge,.switch a,.btns button,.plink a,.sheet .open,.index a{font-size:14px!important;font-weight:600!important}
 .cat{font-size:clamp(20px,2.2vw,26px)!important}
 .btn{font-size:17px!important;font-weight:600!important}
+.legal a{color:inherit}
+.legal a:hover{color:#fff}
+html{overflow-x:clip}
+/* phones: photo, title and intro fill the first screen, content starts below */
+@media(max-width:600px){
+ .hero{min-height:100svh}
+ .hero-img{height:100%;bottom:0}
+ .shade{background:linear-gradient(180deg,rgba(10,10,10,.35) 0%,rgba(10,10,10,0) 22%,rgba(10,10,10,.25) 45%,rgba(10,10,10,.85) 75%,#0a0a0a 100%)}
+ .hero-txt{justify-content:flex-end;padding-bottom:40px}
+}
 </style>
 </head>
 <body>
