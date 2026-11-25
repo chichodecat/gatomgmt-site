@@ -38,15 +38,15 @@ body.leaving{animation:pgout .28s ease forwards}
 .side::after{content:'';position:absolute;inset:0;background:linear-gradient(0deg,rgba(0,0,0,.88) 0%,rgba(0,0,0,.45) 38%,rgba(0,0,0,.15) 65%,rgba(0,0,0,.45) 100%)}
 .mus{clip-path:polygon(0 0,calc(50% + var(--cut)) 0,calc(50% - var(--cut)) 100%,0 100%)}
 .mgr{clip-path:polygon(calc(50% + var(--cut)) 0,100% 0,100% 100%,calc(50% - var(--cut)) 100%)}
-.mus img{object-position:30% 30%;width:62%;}
+.mus img{object-position:30% 41%;width:62%;}
 .mgr img{object-position:50% 35%;left:auto;right:0;width:62%}
 .txt{position:relative;z-index:2;padding:0 max(4vw,20px) clamp(40px,8vh,90px);max-width:560px}
 .mgr .txt{margin-left:auto;text-align:right}
 h2{font:400 clamp(40px,5vw,72px)/.95 'Archivo',sans-serif;margin:0 0 14px;text-shadow:0 2px 14px rgba(0,0,0,.6)}
 p{margin:0 0 22px;font-size:clamp(17px,1.4vw,20px);color:rgba(255,255,255,.9);text-shadow:0 1px 8px rgba(0,0,0,.8)}
 .mgr p{margin-left:auto}
-.btn{display:inline-flex;align-items:center;gap:10px;min-height:48px;padding:10px 22px;background:var(--vio);color:#fff;font:400 22px/1 'Archivo',sans-serif;border-radius:var(--hand);box-shadow:3px 3px 0 #f2f2f2;transition:transform .2s,box-shadow .2s}
-.side:hover .btn,.side:focus-visible .btn{transform:translate(-2px,-2px);box-shadow:5px 5px 0 #f2f2f2}
+.btn{display:inline-flex;align-items:center;gap:10px;min-height:48px;padding:10px 22px;background:var(--vio);color:#fff;font:400 22px/1 'Archivo',sans-serif;border-radius:var(--hand);box-shadow:3px 3px 0 #000;transition:transform .2s,box-shadow .2s}
+.side:hover .btn,.side:focus-visible .btn{transform:translate(-2px,-2px);box-shadow:5px 5px 0 #000}
 .side:hover img{transform:scale(1.04)}
 .side:focus-visible{outline:none}
 .side:focus-visible .btn{outline:3px solid #fff;outline-offset:4px}
@@ -121,6 +121,23 @@ document.addEventListener('click',e=>{
   setTimeout(()=>{location.href=a.href},260);
 });
 addEventListener('pageshow',e=>{if(e.persisted)document.body.classList.remove('leaving')});
+}
+</script>
+<script>
+{
+/* keep both pairs of eyes on the same line, whatever the screen size */
+const EYE_MUS=0.44, EYE_MGR=0.498;
+const mus=document.querySelector('.mus img'), mgr=document.querySelector('.mgr img');
+const eyeY=(img,f)=>{const b=img.getBoundingClientRect(),s=Math.max(b.width/img.naturalWidth,b.height/img.naturalHeight),dh=img.naturalHeight*s;const oy=(dh-b.height)*(parseFloat(getComputedStyle(img).objectPosition.split(' ')[1])/100);return f*dh-oy};
+const align=()=>{
+  if(!mus.naturalWidth||!mgr.naturalWidth||innerWidth<=760){mus.style.objectPosition='';return}
+  const target=eyeY(mgr,EYE_MGR), b=mus.getBoundingClientRect(), s=Math.max(b.width/mus.naturalWidth,b.height/mus.naturalHeight), dh=mus.naturalHeight*s;
+  const free=dh-b.height; if(free<=0)return;
+  const oy=Math.min(free,Math.max(0,EYE_MUS*dh-target));
+  mus.style.objectPosition='30% '+(oy/free*100).toFixed(2)+'%';
+};
+for(const i of [mus,mgr]) i.complete?align():i.addEventListener('load',align);
+const ro=new ResizeObserver(align); ro.observe(document.body);
 }
 </script>
 </body>
