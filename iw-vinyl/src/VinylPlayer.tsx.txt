@@ -1,0 +1,502 @@
+import * as React from "react"
+import { addPropertyControls, ControlType, RenderTarget } from "framer"
+// @ts-ignore URL import, resolved by Framer at runtime
+import * as THREE from "https://esm.sh/three@0.160.0"
+// @ts-ignore URL import, resolved by Framer at runtime
+import { RoomEnvironment } from "https://esm.sh/three@0.160.0/examples/jsm/environments/RoomEnvironment.js"
+
+/* Infinity Warlords 3D vinyl player: sleeve, insert and record you can open, turn and play. */
+
+const TRACKS = [
+    { n: 1, side: "A", t: "Manifesto", dur: 298.18 },
+    { n: 2, side: "A", t: "Happy", dur: 259.01 },
+    { n: 3, side: "A", t: "Holding Out Hope", dur: 270.62 },
+    { n: 4, side: "A", t: "If I Try To Understand U", dur: 249.89 },
+    { n: 5, side: "A", t: "…", dur: 63.72 },
+    { n: 6, side: "A", t: "Cold", dur: 207.12 },
+    { n: 7, side: "B", t: "Like You Did", dur: 237.0 },
+    { n: 8, side: "B", t: "What’s The Name Of The Band", dur: 133.54 },
+    { n: 9, side: "B", t: "Destruction Of The World", dur: 232.44 },
+    { n: 10, side: "B", t: "Yesterday", dur: 309.5 },
+    { n: 11, side: "B", t: "Oh Shizzle", dur: 276.79 },
+]
+
+interface Props {
+    assetsUrl: string
+    buyUrl: string
+    buyReady: boolean
+    vinylColor: string
+    green: string
+    pink: string
+    stageHeight: number
+    style?: React.CSSProperties
+}
+
+const fmt = (s: number) => (!isFinite(s) ? "0:00" : Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0"))
+const ss = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+const outCubic = (t: number) => 1 - Math.pow(1 - t, 3)
+const outBack = (t: number) => { const c = 1.5; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2) }
+const startCurve = (k: number) => 1 - Math.pow(1 - k, 2.2)
+const stopCurve = (k: number) => 1 - Math.pow(1 - k, 1.5)
+
+type UI = { cur: number; playing: boolean; side: "A" | "B"; open: boolean; time: number; dur: number; note: string; ready: boolean; failed: boolean }
+
+/**
+ * @framerSupportedLayoutWidth any
+ * @framerSupportedLayoutHeight auto
+ */
+export default function VinylPlayer(props: Props) {
+    const { assetsUrl, buyUrl, buyReady, vinylColor, green, pink, stageHeight, style } = props
+    const base = assetsUrl.replace(/\/?$/, "/")
+    const stageRef = React.useRef<HTMLDivElement>(null)
+    const engine = React.useRef<any>(null)
+    const engineCanvas = React.useRef<HTMLCanvasElement | null>(null)
+    const bigRef = React.useRef(false)
+    const [focus, setFocusUi] = React.useState<string | null>(null)
+    const [ui, setUi] = React.useState<UI>({ cur: 0, playing: false, side: "A", open: false, time: 0, dur: TRACKS[0].dur, note: "", ready: false, failed: false })
+    const [modal, setModal] = React.useState(false)
+    const [big, setBig] = React.useState(false)
+    const [narrow, setNarrow] = React.useState(false)
+    React.useEffect(() => {
+        if (typeof window === "undefined") return
+        const mq = window.matchMedia("(max-width: 809px)")
+        const on = () => setNarrow(mq.matches)
+        on(); mq.addEventListener("change", on)
+        return () => mq.removeEventListener("change", on)
+    }, [])
+    React.useEffect(() => {
+        if (!big || typeof document === "undefined") return
+        const prev = document.body.style.overflow
+        document.body.style.overflow = "hidden"
+        const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setBig(false) }
+        window.addEventListener("keydown", esc)
+        return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", esc) }
+    }, [big])
+    React.useEffect(() => {
+        bigRef.current = big
+        if (engineCanvas.current) engineCanvas.current.style.touchAction = big ? "none" : "pan-y"
+        if (!big) engine.current?.focus(null)
+    }, [big])
+    const isCanvas = RenderTarget.current() === RenderTarget.canvas
+    const dim = "color-mix(in srgb, " + green + " 60%, transparent)"
+
+    React.useEffect(() => {
+        if (isCanvas || !stageRef.current) return
+        const stage = stageRef.current
+        let disposed = false
+        const S: any = {
+            openT: 0, openTarget: 0, side: "A", flipFrom: 0, flipTo: 0, flipP: 1,
+            rotY: 0, rotX: 0, velY: 0, dragging: false, lastDrag: 0, turnTarget: 0, inertia: false,
+            playing: false, cur: 0, spinAngle: 0, motor: 0, ramp: null, pendingGo: false, unlocked: false,
+            note: "", ready: false, focus: null,
+        }
+        const audio = new Audio()
+        audio.preload = "metadata"
+        audio.crossOrigin = "anonymous"
+        ;(audio as any).playsInline = true
+        audio.setAttribute("playsinline", "")
+        const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || ((navigator as any).maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))
+        const MIN_RATE = mobile ? 0.25 : 0.08
+        let ctx: AudioContext | null = null, gain: GainNode | null = null, lastRate = 1, lastRateAt = 0
+        function ensureCtx() {
+            try {
+                if (!ctx) {
+                    /* keep playing with the iPhone silent switch on, like a normal audio player */
+                    try { if ((navigator as any).audioSession) (navigator as any).audioSession.type = "playback" } catch (_) {}
+                    const AC = (window as any).AudioContext || (window as any).webkitAudioContext
+                    if (!AC) return
+                    ctx = new AC(); gain = ctx!.createGain()
+                    ctx!.createMediaElementSource(audio).connect(gain); gain.connect(ctx!.destination)
+                }
+                if (ctx && ctx.state === "suspended") ctx.resume()
+            } catch (_) { ctx = null; gain = null }
+        }
+        /* level follows the motor so the very slow tail fades out; speed changes are throttled because phones glitch when the rate changes every frame */
+        function applyMotor(force?: boolean) {
+            const lvl = Math.min(1, S.motor / 0.3)
+            if (gain && ctx) gain.gain.setTargetAtTime(lvl, ctx.currentTime, 0.03); else { try { audio.volume = lvl } catch (_) {} }
+            const rate = Math.max(MIN_RATE, Math.min(1, S.motor))
+            const now = performance.now(), step = mobile ? 0.04 : 0.01, every = mobile ? 70 : 0
+            if (force || rate === 1 || (Math.abs(rate - lastRate) >= step && now - lastRateAt >= every)) {
+                if (Math.abs(rate - lastRate) > 0.0001) { try { audio.playbackRate = rate } catch (_) {} lastRate = rate; lastRateAt = now }
+            }
+        }
+        audio.src = base + "audio/01.mp3"
+        const push = () => { if (!disposed) setUi((u) => ({ ...u, cur: S.cur, playing: S.playing, side: S.side, open: S.openTarget > 0, note: S.note, ready: S.ready, dur: audio.duration || TRACKS[S.cur].dur })) }
+
+        /* renderer */
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+        renderer.toneMapping = THREE.NoToneMapping
+        renderer.outputColorSpace = THREE.SRGBColorSpace
+        renderer.domElement.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y;cursor:grab"
+        engineCanvas.current = renderer.domElement
+        stage.appendChild(renderer.domElement)
+        const scene = new THREE.Scene()
+        const pmrem = new THREE.PMREMGenerator(renderer)
+        scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture
+        const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100)
+        scene.add(new THREE.AmbientLight(0xffffff, 0.25))
+        const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(-3, 4, 6); scene.add(key)
+        const maxAniso = renderer.capabilities.getMaxAnisotropy()
+        const loader = new THREE.TextureLoader(); loader.setCrossOrigin("anonymous")
+        const loadTex = (u: string) => new Promise<any>((res, rej) => loader.load(u, (t: any) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = maxAniso; res(t) }, undefined, rej))
+        const loadImg = (u: string) => new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = rej; i.src = u })
+
+        function recordCanvas(labelImg: HTMLImageElement, count: number) {
+            const Sz = 2048, c = document.createElement("canvas"); c.width = c.height = Sz; const g = c.getContext("2d")!
+            const id = g.createImageData(Sz, Sz), d = id.data, R = Sz / 2
+            const col = new THREE.Color(vinylColor); const br = col.r * 255, bg = col.g * 255, bb = col.b * 255
+            const gaps: number[] = []; for (let k = 1; k < count; k++) gaps.push(0.95 - k * (0.58 / count))
+            for (let y = 0; y < Sz; y++) for (let x = 0; x < Sz; x++) {
+                const dx = x - R + 0.5, dy = y - R + 0.5, r = Math.sqrt(dx * dx + dy * dy) / R, i = (y * Sz + x) * 4
+                if (r > 1) { d[i + 3] = 0; continue }
+                let v = 1
+                if (r > 0.37 && r < 0.955) { v = 0.9 + 0.05 * Math.sin(r * 2600) + 0.03 * Math.sin(r * 640 + Math.atan2(dy, dx) * 0.5) + (Math.random() - 0.5) * 0.04; for (const gp of gaps) if (Math.abs(r - gp) < 0.0045) v = 1.08 }
+                else if (r >= 0.955 && r < 0.985) v = 1.02; else if (r >= 0.985) v = 0.82; else v = 1.04
+                d[i] = Math.min(255, br * v); d[i + 1] = Math.min(255, bg * v); d[i + 2] = Math.min(255, bb * v); d[i + 3] = 255
+            }
+            g.putImageData(id, 0, 0)
+            const lr = R / 3; g.save(); g.beginPath(); g.arc(R, R, lr, 0, Math.PI * 2); g.clip(); g.drawImage(labelImg, R - lr, R - lr, lr * 2, lr * 2); g.restore()
+            g.fillStyle = "#000"; g.beginPath(); g.arc(R, R, Sz * 0.012, 0, Math.PI * 2); g.fill()
+            return c
+        }
+        function roughCanvas(count: number) {
+            const Sz = 512, c = document.createElement("canvas"); c.width = c.height = Sz; const g = c.getContext("2d")!, R = Sz / 2
+            const ring = (r: number, col: string) => { g.fillStyle = col; g.beginPath(); g.arc(R, R, r * R, 0, Math.PI * 2); g.fill() }
+            ring(1, "#555"); ring(0.985, "#333"); ring(0.955, "#606060"); ring(0.37, "#2a2a2a"); ring(0.3333, "#d0d0d0")
+            g.strokeStyle = "#262626"; g.lineWidth = 2; for (let k = 1; k < count; k++) { g.beginPath(); g.arc(R, R, (0.95 - k * (0.58 / count)) * R, 0, Math.PI * 2); g.stroke() }
+            return c
+        }
+        function lockedPage(img: HTMLImageElement) {
+            const Sz = 1024, c = document.createElement("canvas"); c.width = c.height = Sz; const g = c.getContext("2d")!
+            g.drawImage(img, 0, 0, Sz, Sz); g.textAlign = "center"; g.textBaseline = "middle"
+            const lines: [string, number, string][] = buyReady
+                ? [["BUY THE", 68, pink], ["VINYL", 68, pink], ["", 30, ""], ["TO READ", 42, green], ["WHAT’S", 42, green], ["INSIDE", 42, green]]
+                : [["VINYL", 68, pink], ["COMING", 68, pink], ["SOON", 68, pink], ["", 30, ""], ["TO READ", 42, green], ["WHAT’S", 42, green], ["INSIDE", 42, green]]
+            let y = Sz / 2 - (buyReady ? 170 : 210)
+            for (const [t, sz, col] of lines) { g.font = sz + 'px "GFS Didot", Georgia, serif'; g.fillStyle = col; if (t) g.fillText(t, Sz * 0.5, y + sz / 2); y += sz * 1.18 }
+            const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = maxAniso; return t
+        }
+
+        const W = 3.14, DEPTH = 0.04, VR = 1.5, IW = 3.05
+        const world = new THREE.Group(); scene.add(world)
+        const sleeve = new THREE.Group(), record = new THREE.Group(), flip = new THREE.Group(), spin = new THREE.Group(), insert = new THREE.Group()
+        world.add(sleeve, insert, record); record.add(flip); flip.add(spin)
+
+        Promise.all([
+            loadTex(base + "assets/front.jpg"), loadTex(base + "assets/back.jpg"), loadImg(base + "assets/label_a.jpg"), loadImg(base + "assets/label_b.jpg"),
+            loadTex(base + "assets/spine.jpg"), loadImg(base + "assets/insert_1_blur.jpg"), loadImg(base + "assets/insert_2_blur.jpg"),
+            (document as any).fonts ? (document as any).fonts.load('80px "GFS Didot"').catch(() => {}) : Promise.resolve(),
+        ]).then(([front, back, la, lb, spineT, b1, b2]: any[]) => {
+            if (disposed) return
+            const edge = new THREE.MeshBasicMaterial({ color: 0x111313 })
+            const paper = (m: any) => new THREE.MeshBasicMaterial({ map: m })
+            const box = new THREE.Mesh(new THREE.BoxGeometry(W, W, DEPTH), [edge, paper(spineT), edge, edge, paper(front), paper(back)])
+            box.userData.part = "sleeve"; sleeve.add(box)
+            const pg = new THREE.PlaneGeometry(IW, IW)
+            const p1 = new THREE.Mesh(pg, paper(lockedPage(b1))); p1.position.z = 0.002
+            const p2 = new THREE.Mesh(pg, paper(lockedPage(b2))); p2.rotation.y = Math.PI; p2.position.z = -0.002
+            p1.userData.part = p2.userData.part = "insert"; insert.add(p1, p2)
+            const mk = (img: HTMLImageElement, n: number) => {
+                const t = new THREE.CanvasTexture(recordCanvas(img, n)); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = maxAniso
+                return [new THREE.MeshBasicMaterial({ map: t, alphaTest: 0.5 }),
+                    new THREE.MeshStandardMaterial({ color: 0x000000, roughnessMap: new THREE.CanvasTexture(roughCanvas(n)), roughness: 1, metalness: 0, envMapIntensity: 1.4, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })]
+            }
+            const ringGeo = new THREE.RingGeometry(0.036, VR, 160, 1)
+            const face = (img: HTMLImageElement, n: number, isBack: boolean) => {
+                const [b, gl] = mk(img, n), g = new THREE.Group()
+                const a = new THREE.Mesh(ringGeo, b), o = new THREE.Mesh(ringGeo, gl); o.position.z = 0.0008; a.userData.part = o.userData.part = "record"
+                g.add(a, o); if (isBack) { g.rotation.y = Math.PI; g.position.z = -0.006 } else g.position.z = 0.006; return g
+            }
+            const rim = new THREE.Mesh(new THREE.CylinderGeometry(VR, VR, 0.012, 160, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(vinylColor).multiplyScalar(0.8) }))
+            rim.rotation.x = Math.PI / 2; rim.userData.part = "record"
+            spin.add(face(la, 6, false), face(lb, 5, true), rim)
+            S.ready = true; resize(); push()
+        }).catch(() => { if (!disposed) setUi((u) => ({ ...u, failed: true })) })
+
+        /* state helpers */
+        const currentFlip = () => S.flipFrom + (S.flipTo - S.flipFrom) * ss(0.3, 0.7, S.flipP)
+        const rampMotor = (to: number, dur: number, curve: (k: number) => number, done?: () => void) => { S.ramp = { from: S.motor, to, t0: performance.now(), dur: dur * 1000, curve, done } }
+        function setOpen(v: boolean) { S.openTarget = v ? 1 : 0; if (!v) { S.focus = null; if (!disposed) setFocusUi(null) } if (!v) pause(); S.turnTarget = Math.round(S.rotY / (Math.PI * 2)) * Math.PI * 2; push() }
+        function setSide(s: "A" | "B") { if (s === S.side) return; S.side = s; S.flipFrom = currentFlip(); S.flipTo = s === "A" ? 0 : Math.PI; S.flipP = 0; push() }
+        function load(i: number) { S.cur = i; audio.src = base + "audio/" + String(i + 1).padStart(2, "0") + ".mp3"; S.note = ""; setUi((u) => ({ ...u, time: 0 })); push() }
+        const readyToSpin = () => S.openT >= 0.97 && S.flipP >= 1
+        function go() {
+            if (!S.playing) return
+            S.unlocking = false; audio.muted = false
+            ;(audio as any).preservesPitch = false; (audio as any).mozPreservesPitch = false; (audio as any).webkitPreservesPitch = false
+            applyMotor(true)
+            audio.play().then(() => { if (S.playing) rampMotor(1, 0.8, startCurve) }).catch(() => { S.playing = false; push() })
+        }
+        function play() {
+            if (S.openTarget < 1) setOpen(true)
+            S.playing = true; push()
+            ensureCtx()
+            if (readyToSpin()) { go(); return }
+            /* record still coming out: unlock audio inside this tap so it may start a moment later, without pausing it if it already started */
+            if (!S.unlocked && audio.paused) {
+                S.unlocking = true; audio.muted = true
+                audio.play().then(() => { S.unlocked = true; if (S.unlocking) audio.pause(); audio.muted = false; S.unlocking = false }).catch(() => { audio.muted = false; S.unlocking = false })
+            }
+            S.pendingGo = true
+        }
+        function pause() { S.playing = false; S.pendingGo = false; push(); rampMotor(0, 1.0, stopCurve, () => { if (!S.playing) { audio.pause(); S.motor = 0; applyMotor(true) } }) }
+        function select(i: number, autoplay: boolean) {
+            const t = TRACKS[i], needFlip = t.side !== S.side
+            if (S.openTarget < 1) setOpen(true)
+            if (needFlip && S.playing && S.motor > 0.05) {
+                S.pendingGo = false
+                rampMotor(0, 1.0, stopCurve, () => { audio.pause(); load(i); setSide(t.side as any); if (autoplay && S.playing) S.pendingGo = true; else { S.playing = false; push() } })
+                return
+            }
+            const running = S.playing && S.motor > 0.9 && !needFlip
+            ensureCtx()
+            load(i); setSide(t.side as any)
+            if (!autoplay) return
+            if (running) audio.play().catch(() => {}); else play()
+        }
+        const onTime = () => { if (!disposed) setUi((u) => ({ ...u, time: audio.currentTime, dur: audio.duration || u.dur })) }
+        const onEnded = () => { if (S.cur < TRACKS.length - 1) select(S.cur + 1, true); else { pause(); setTimeout(() => { if (!S.playing) select(0, false) }, 1100) } }
+        audio.addEventListener("timeupdate", onTime); audio.addEventListener("ended", onEnded)
+
+        /* pointer: drag to turn, click to open, play or read the insert */
+        const cv = renderer.domElement, ray = new THREE.Raycaster(), ptr = new THREE.Vector2()
+        let down: any = null
+        const pick = (e: PointerEvent) => { const r = cv.getBoundingClientRect(); ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ptr, camera); const h = ray.intersectObjects(world.children, true)[0]; return h ? h.object.userData.part : null }
+        const onDown = (e: PointerEvent) => { down = { x: e.clientX, y: e.clientY, moved: false } }
+        const onMove = (e: PointerEvent) => {
+            if (!down) { if (S.ready) { const p = pick(e); cv.style.cursor = p && (S.openTarget < 1 || p !== "sleeve") ? "pointer" : "grab" } return }
+            const dx = e.clientX - down.x, dy = e.clientY - down.y
+            if (!down.moved && Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) { down.moved = true; S.dragging = true; try { cv.setPointerCapture(e.pointerId) } catch (_) {} }
+            if (down.moved) { S.velY = e.movementX * 0.008; S.rotY += S.velY; S.rotX = Math.max(-0.4, Math.min(0.4, S.rotX + e.movementY * 0.005)); S.lastDrag = performance.now() }
+        }
+        const onUp = (e: PointerEvent) => {
+            const was = down; down = null; S.dragging = false
+            if (was && !was.moved && S.ready) {
+                const part = pick(e)
+                if (bigRef.current) {
+                    /* big view: first tap zooms on a piece, second tap uses it, empty space zooms out */
+                    if (!part) { setFocus(null); return }
+                    if (S.openTarget < 1) { setOpen(true); return }
+                    if (S.focus !== part) { setFocus(part); return }
+                    if (part === "record") (S.playing ? pause() : play()); else if (part === "insert") setModal(true)
+                    return
+                }
+                if (!part) return
+                if (S.openTarget < 1) setOpen(true); else if (part === "record") (S.playing ? pause() : play()); else if (part === "insert") setModal(true)
+            }
+            else if (was) S.inertia = true
+        }
+        cv.addEventListener("pointerdown", onDown); cv.addEventListener("pointermove", onMove); cv.addEventListener("pointerup", onUp); cv.addEventListener("pointercancel", onUp)
+
+        function setFocus(f: string | null) { S.focus = f; if (!disposed) setFocusUi(f) }
+        engine.current = {
+            focus: (f: string | null) => setFocus(f),
+            toggleOpen: () => setOpen(S.openTarget < 1),
+            turn: () => { S.turnTarget = Math.round(S.rotY / Math.PI) * Math.PI + Math.PI },
+            togglePlay: () => (S.playing ? pause() : play()),
+            prev: () => { if (audio.currentTime > 3) { audio.currentTime = 0; return } select(Math.max(0, S.cur - 1), S.playing) },
+            next: () => select((S.cur + 1) % TRACKS.length, S.playing),
+            select: (i: number) => select(i, true),
+            side: (s: "A" | "B") => { const first = s === "A" ? 0 : 6; if (TRACKS[S.cur].side !== s) select(first, S.playing); else { if (S.openTarget < 1) setOpen(true); setSide(s) } },
+            seek: (f: number) => { if (audio.duration) audio.currentTime = f * audio.duration },
+        }
+
+        /* layout + loop */
+        let aspect = 1, camX = 0, camY = 0, camD = 8
+        function resize() { const w = stage.clientWidth || 1, h = stage.clientHeight || 1; renderer.setSize(w, h, false); aspect = w / h; camera.aspect = aspect; camera.updateProjectionMatrix() }
+        const ro = new ResizeObserver(resize); ro.observe(stage); resize()
+        const fitDist = (hw: number, hh: number) => { const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)); return Math.max(hh / t, hw / (t * aspect)) * 1.12 }
+        const clock = new THREE.Clock()
+        renderer.setAnimationLoop(() => {
+            const dt = Math.min(clock.getDelta(), 0.05), time = clock.elapsedTime
+            if (S.openT < S.openTarget) S.openT = Math.min(1, S.openT + dt / 2.4); else if (S.openT > S.openTarget) S.openT = Math.max(0, S.openT - dt / 1.6)
+            const T = S.openT, e = ease(ss(0.2, 0.9, T))
+            if (S.ramp) { const k = Math.min(1, (performance.now() - S.ramp.t0) / S.ramp.dur); S.motor = S.ramp.from + (S.ramp.to - S.ramp.from) * S.ramp.curve(k); if (k >= 1) { const d = S.ramp.done; S.ramp = null; d && d() } }
+            if (!audio.paused) applyMotor()
+            if (S.pendingGo && readyToSpin()) { S.pendingGo = false; go() }
+            if (S.flipP < 1) S.flipP = Math.min(1, S.flipP + dt / 1.3)
+            if (!S.dragging) {
+                S.velY *= Math.pow(0.04, dt)
+                if (S.inertia && performance.now() - S.lastDrag > 500) { S.inertia = false; S.turnTarget = Math.round(S.rotY / Math.PI) * Math.PI }
+                if (!S.inertia) S.rotY += (S.turnTarget - S.rotY) * (1 - Math.exp(-dt * 4)); else S.rotY += S.velY
+                S.rotX += (0 - S.rotX) * (1 - Math.exp(-dt * 3))
+            }
+            const sway = S.dragging ? 0 : (1 - e) * Math.sin(time * 0.6) * 0.12
+            const tilt = -0.28 * Math.sin(Math.PI * ss(0, 0.6, T))
+            world.rotation.set(S.rotX + Math.sin(time * 0.5) * 0.03 + 0.05 * Math.sin(Math.PI * ss(0, 0.6, T)), S.rotY + sway + tilt, 0)
+            const sx = -1.95 * ease(ss(0.35, 0.9, T))
+            sleeve.position.set(sx, 0, 0)
+            const rel = 3.1 * outCubic(ss(0.1, 0.55, T)) + 0.85 * ease(ss(0.5, 0.9, T))
+            const bump = Math.pow(Math.sin(Math.PI * S.flipP), 0.6)
+            record.position.set(sx + rel + 0.3 * bump, 0, 0.05 * ss(0.56, 0.8, T) + 0.9 * bump)
+            const backness = (1 - Math.cos(world.rotation.y)) / 2
+            insert.position.set(sx + 2.0 * outBack(ss(0.45, 1, T)), 0.16 * outBack(ss(0.55, 1, T)), THREE.MathUtils.lerp(-0.05, 0.1, backness) * ss(0.36, 0.46, T))
+            insert.rotation.z = -0.045 * outBack(ss(0.55, 1, T))
+            insert.visible = T > 0.36
+            flip.rotation.y = currentFlip()
+            if (S.flipP >= 1) S.spinAngle += (S.side === "A" ? -1 : 1) * 3.49 * S.motor * dt
+            spin.rotation.z = S.spinAngle - 1.6 * outCubic(ss(0.1, 0.7, T))
+            const left = sx - W / 2, right = Math.max(record.position.x + VR, insert.position.x + IW / 2), cx = (left + right) / 2
+            const d = fitDist(Math.max(1.75, (right - left) / 2 + 0.06), 1.85 + 0.15 * Math.sin(Math.PI * ss(0, 0.6, T)))
+            let tx = cx * Math.cos(world.rotation.y), ty = 0, td = d
+            const fo = S.focus === "record" ? record : S.focus === "insert" ? insert : S.focus === "sleeve" ? sleeve : null
+            if (fo && S.openT > 0.97) { tx = fo.position.x * Math.cos(world.rotation.y); ty = fo.position.y; td = fitDist(1.62, 1.62) }
+            const k6 = 1 - Math.exp(-dt * 6)
+            camX += (tx - camX) * k6; camY += (ty - camY) * k6; camD += (td - camD) * k6
+            camera.position.set(camX, camY, camD); camera.lookAt(camX, camY, 0)
+            renderer.render(scene, camera)
+        })
+
+        return () => {
+            disposed = true
+            renderer.setAnimationLoop(null); ro.disconnect()
+            cv.removeEventListener("pointerdown", onDown); cv.removeEventListener("pointermove", onMove); cv.removeEventListener("pointerup", onUp); cv.removeEventListener("pointercancel", onUp)
+            audio.pause(); audio.removeEventListener("timeupdate", onTime); audio.removeEventListener("ended", onEnded); audio.src = ""
+            try { ctx && ctx.close() } catch (_) {}
+            renderer.dispose(); pmrem.dispose(); if (cv.parentNode) cv.parentNode.removeChild(cv)
+            engine.current = null
+        }
+    }, [isCanvas, base, vinylColor, green, pink, buyReady])
+
+    const E = () => engine.current
+    const font = '"GFS Didot", Didot, Georgia, serif'
+    const linkBtn: React.CSSProperties = { font: "inherit", color: green, background: "none", border: 0, padding: "10px 4px", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 4 }
+    const t = TRACKS[ui.cur]
+    const progress = ui.dur ? Math.min(1, ui.time / ui.dur) : 0
+    const playIcon = ui.playing ? <path d="M6 4h4v16H6zM14 4h4v16h-4z" /> : <path d="M7 4v16l13-8z" />
+
+    const list = (S: "A" | "B") => (
+        <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+            <button onClick={() => E()?.side(S)} style={{ font: "inherit", background: "none", border: 0, cursor: "pointer", width: "100%", fontSize: 21, letterSpacing: "0.04em", padding: "10px 0", color: ui.side === S ? pink : green }}>SIDE {S}</button>
+            {TRACKS.filter((x) => x.side === S).map((x) => {
+                const on = x.n - 1 === ui.cur
+                return (
+                    <button key={x.n} onClick={() => E()?.select(x.n - 1)} style={{ font: "inherit", background: "none", border: 0, cursor: "pointer", width: "100%", display: "grid", gridTemplateColumns: "28px minmax(0,1fr) auto", gap: 8, alignItems: "center", textAlign: "left", minHeight: 40, fontSize: 16, letterSpacing: "0.02em", textTransform: "uppercase", color: on ? pink : green }}>
+                        <span style={{ color: dim, fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{x.n}</span>
+                        <span>{x.t}</span>
+                        <span style={{ color: dim, fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{fmt(x.dur)}</span>
+                    </button>
+                )
+            })}
+        </div>
+    )
+
+    return (
+        <div style={{ ...style, fontFamily: font, color: green, display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
+            <div
+                ref={stageRef}
+                style={big
+                    ? { position: "fixed", inset: 0, width: "100vw", height: "100dvh", background: "#000", zIndex: 60 }
+                    : { position: "relative", width: "100%", height: stageHeight }}
+            >
+                {big && (
+                    <>
+                        <button aria-label="Close big view" onClick={() => setBig(false)} style={{ position: "absolute", top: 12, right: 12, zIndex: 2, width: 44, height: 44, borderRadius: "50%", border: "1px solid " + green, background: "rgba(0,0,0,0.6)", color: green, cursor: "pointer", display: "grid", placeItems: "center" }}>
+                            <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.6}><path d="M6 6l12 12M18 6L6 18" /></svg>
+                        </button>
+                        <div style={{ position: "absolute", left: 0, right: 0, top: 24, zIndex: 1, textAlign: "center", fontFamily: font, fontSize: 15, color: dim, pointerEvents: "none", padding: "0 64px" }}>
+                            {!ui.open ? "tap the sleeve to open it" : focus ? "tap empty space to see everything" : "tap a piece to look closer"}
+                        </div>
+                        <div style={{ position: "absolute", left: 0, right: 0, bottom: "calc(20px + env(safe-area-inset-bottom))", zIndex: 2, display: "flex", justifyContent: "center", alignItems: "center", gap: 24, fontFamily: font, fontSize: 18 }}>
+                            <button style={linkBtn} onClick={() => E()?.toggleOpen()}>{ui.open ? "put it back" : "open the record"}</button>
+                            <button aria-label={ui.playing ? "Pause" : "Play"} onClick={() => E()?.togglePlay()} style={{ width: 58, height: 58, borderRadius: "50%", border: "1px solid " + pink, background: "rgba(0,0,0,0.6)", color: pink, cursor: "pointer", display: "grid", placeItems: "center" }}>
+                                <svg viewBox="0 0 24 24" width={18} height={18} fill="currentColor">{playIcon}</svg>
+                            </button>
+                            <button style={linkBtn} onClick={() => E()?.turn()}>turn it over</button>
+                        </div>
+                    </>
+                )}
+                {(isCanvas || !ui.ready) && (
+                    <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+                        {isCanvas ? (
+                            <img src={base + "assets/front.jpg"} alt="Infinity Warlords album cover" style={{ height: "80%", aspectRatio: "1", objectFit: "cover" }} />
+                        ) : (
+                            <span style={{ letterSpacing: "0.04em" }}>{ui.failed ? "THE RECORD COULD NOT LOAD" : "UNPACKING THE RECORD"}</span>
+                        )}
+                    </div>
+                )}
+            </div>
+            {narrow && !isCanvas && (
+                <button aria-label="See the record big" onClick={() => setBig(true)} style={{ marginTop: 6, width: 44, height: 44, borderRadius: "50%", border: "1px solid " + green, background: "none", color: green, cursor: "pointer", display: "grid", placeItems: "center" }}>
+                    <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6" /></svg>
+                </button>
+            )}
+            <div style={{ display: "flex", gap: 28, justifyContent: "center", flexWrap: "wrap", fontSize: 18 }}>
+                <button style={linkBtn} onClick={() => E()?.toggleOpen()}>{ui.open ? "put it back in the sleeve" : "open the record"}</button>
+                <button style={linkBtn} onClick={() => E()?.turn()}>turn it over</button>
+            </div>
+            <div style={{ textAlign: "center", width: "100%", maxWidth: 560, marginTop: 28 }}>
+                {buyReady ? (
+                    <a href={buyUrl} target="_blank" rel="noopener" style={{ color: green, fontSize: 21, letterSpacing: "0.04em", textUnderlineOffset: 4 }}>BUY THE VINYL</a>
+                ) : (
+                    <div style={{ color: green, fontSize: 21, letterSpacing: "0.04em" }}>VINYL COMING SOON</div>
+                )}
+                <div style={{ fontSize: 15, color: dim, marginTop: 16 }}>side {t.side}, track {t.n}</div>
+                <div style={{ fontSize: 21, letterSpacing: "0.04em", color: pink, margin: "6px 0 18px", textTransform: "uppercase" }}>{t.t}</div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 18 }}>
+                    <button aria-label="Previous track" onClick={() => E()?.prev()} style={{ width: 44, height: 44, background: "none", border: 0, color: green, cursor: "pointer", display: "grid", placeItems: "center" }}>
+                        <svg viewBox="0 0 24 24" width={18} height={18} fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z" /></svg>
+                    </button>
+                    <button aria-label={ui.playing ? "Pause" : "Play"} onClick={() => E()?.togglePlay()} style={{ width: 58, height: 58, borderRadius: "50%", border: "1px solid " + pink, background: "none", color: pink, cursor: "pointer", display: "grid", placeItems: "center" }}>
+                        <svg viewBox="0 0 24 24" width={18} height={18} fill="currentColor">{playIcon}</svg>
+                    </button>
+                    <button aria-label="Next track" onClick={() => E()?.next()} style={{ width: 44, height: 44, background: "none", border: 0, color: green, cursor: "pointer", display: "grid", placeItems: "center" }}>
+                        <svg viewBox="0 0 24 24" width={18} height={18} fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z" /></svg>
+                    </button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr) auto", gap: 12, alignItems: "center", marginTop: 16, fontSize: 14, color: dim, fontVariantNumeric: "tabular-nums" }}>
+                    <span>{fmt(ui.time)}</span>
+                    <div
+                        role="slider" aria-label="Seek" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)} tabIndex={0}
+                        onClick={(e) => { const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect(); E()?.seek((e.clientX - r.left) / r.width) }}
+                        style={{ position: "relative", height: 24, cursor: "pointer" }}
+                    >
+                        <div style={{ position: "absolute", left: 0, right: 0, top: 12, height: 1, background: green }} />
+                        <div style={{ position: "absolute", top: 7, left: "calc(" + progress * 100 + "% - 5px)", width: 11, height: 11, borderRadius: "50%", background: pink }} />
+                    </div>
+                    <span>{fmt(ui.dur)}</span>
+                </div>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "24px 48px", width: "100%", maxWidth: 720, marginTop: 36 }}>
+                {list("A")}
+                {list("B")}
+            </div>
+            {modal && (
+                <div onClick={(e) => { if (e.target === e.currentTarget) setModal(false) }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", display: "grid", placeItems: "center", zIndex: 50, padding: 20 }}>
+                    <div style={{ textAlign: "center", maxWidth: 420, fontFamily: font, color: green }}>
+                        <img src={base + "assets/insert_1_blur.jpg"} alt="" style={{ width: "min(320px,70vw)", display: "block", margin: "0 auto 22px" }} />
+                        <div style={{ color: pink, fontSize: 21, letterSpacing: "0.04em" }}>WHAT’S INSIDE STAYS INSIDE</div>
+                        <p style={{ margin: "6px 0 0", fontSize: 18 }}>{buyReady ? "buy the vinyl to read the lyrics, the story and the credits" : "the vinyl is coming soon, with the lyrics, the story and the credits inside"}</p>
+                        <div style={{ display: "flex", gap: 28, justifyContent: "center", marginTop: 8 }}>
+                            {buyReady && <a href={buyUrl} target="_blank" rel="noopener" style={{ ...linkBtn, fontSize: 21, letterSpacing: "0.04em" }}>BUY THE VINYL</a>}
+                            <button style={linkBtn} onClick={() => setModal(false)}>close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+VinylPlayer.defaultProps = {
+    assetsUrl: "https://gatomgmt.com/iw-vinyl/",
+    buyUrl: "https://infinitywarlords.bandcamp.com/album/infinity-warlords",
+    buyReady: false,
+    vinylColor: "#e41855",
+    green: "#3baa80",
+    pink: "#e53f73",
+    stageHeight: 480,
+}
+
+addPropertyControls(VinylPlayer, {
+    assetsUrl: { type: ControlType.String, title: "Files URL" },
+    buyReady: { type: ControlType.Boolean, title: "Vinyl on sale", enabledTitle: "Yes", disabledTitle: "Soon" },
+    buyUrl: { type: ControlType.String, title: "Buy link", hidden: (p: any) => !p.buyReady },
+    vinylColor: { type: ControlType.Color, title: "Vinyl" },
+    green: { type: ControlType.Color, title: "Green" },
+    pink: { type: ControlType.Color, title: "Pink" },
+    stageHeight: { type: ControlType.Number, title: "3D height", min: 260, max: 800, step: 10, unit: "px" },
+})
