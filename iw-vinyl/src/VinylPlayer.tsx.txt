@@ -97,7 +97,7 @@ export default function VinylPlayer(props: Props) {
         audio.setAttribute("playsinline", "")
         const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || ((navigator as any).maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))
         const MIN_RATE = mobile ? 0.25 : 0.08
-        let lastRate = 1, lastRateAt = 0, ours = false, watchdog: any = null
+        let lastRate = 1, lastRateAt = 0, ours = false, watchdog: any = null, lastTime = 0
 
         /* iPhone and iPad: Safari ignores speed and pitch changes on normal audio, so the tape stop and start
            play a short snippet of the song through Web Audio, where speed and pitch can be changed */
@@ -120,32 +120,40 @@ export default function VinylPlayer(props: Props) {
         const trackUrl = (i: number) => base + "audio/" + String(i + 1).padStart(2, "0") + ".mp3"
         const decode = (ab: ArrayBuffer) => new Promise<any>((res, rej) => { try { const p = ctx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej) } catch (e) { rej(e) } })
         const within = (p: Promise<any>, ms: number) => Promise.race([p, new Promise((_, rj) => setTimeout(() => rj("timeout"), ms))])
+        /* whole song file for the current track, loaded once in the background (plain request, no partial ranges) */
+        function loadFull(track: number) {
+            if (fullFile[track] || fullLoading[track]) return fullLoading[track] || Promise.resolve(fullFile[track])
+            for (const k of Object.keys(fullFile)) if (+k !== track) delete fullFile[+k]
+            fullLoading[track] = fetch(trackUrl(track)).then((r) => { if (!r.ok) throw "fetch"; return r.arrayBuffer() })
+                .then((b) => { fullFile[track] = b; fullLoading[track] = null; return b }).catch(() => { fullLoading[track] = null; return null })
+            return fullLoading[track]
+        }
+        /* start a snippet exactly on an MP3 frame (sync word, with a second one where the next frame should be) */
+        function frameStart(u8: Uint8Array, from: number) {
+            for (let i = from; i < Math.min(u8.length - 4, from + 6000); i++) {
+                if (u8[i] === 0xff && (u8[i + 1] & 0xe0) === 0xe0) {
+                    const br = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0][u8[i + 2] >> 4] * 1000
+                    const sr = [44100, 48000, 32000, 0][(u8[i + 2] >> 2) & 3]
+                    if (!br || !sr) continue
+                    const len = Math.floor((144 * br) / sr) + ((u8[i + 2] >> 1) & 1)
+                    if (u8[i + len] === 0xff && (u8[i + len + 1] & 0xe0) === 0xe0) return i
+                }
+            }
+            return from
+        }
         async function getChunk(track: number, t: number, dur: number) {
             if (chunk && chunk.track === track && Math.abs(chunk.t - t) < 0.05 && chunk.dur >= dur) return chunk
             if (!ctx) throw "no audio"
-            const s0 = Math.max(0, Math.floor(t * BPS)), e0 = s0 + Math.ceil(dur * BPS)
-            let ab: ArrayBuffer
-            if (fullFile[track]) ab = fullFile[track].slice(s0, e0 + 1)
-            else {
-                try {
-                    const r = await fetch(trackUrl(track), { headers: { Range: "bytes=" + s0 + "-" + e0 } })
-                    if (!r.ok) throw "fetch"
-                    ab = await r.arrayBuffer()
-                    if (r.status === 200) { fullFile[track] = ab; ab = ab.slice(s0, e0 + 1) }
-                } catch (_) {
-                    /* partial requests refused: load this song once in the background and cut snippets from it */
-                    if (!fullLoading[track]) fullLoading[track] = fetch(trackUrl(track)).then((r) => r.arrayBuffer()).then((b) => { fullFile[track] = b; return b }).catch(() => { fullLoading[track] = null; return null })
-                    const b = await fullLoading[track]
-                    if (!b) throw "fetch"
-                    ab = b.slice(s0, e0 + 1)
-                }
-            }
-            const buf = await decode(ab)
-            const c = { track, t, dur, buf }
+            const full = fullFile[track]
+            if (!full) { loadFull(track); throw "not loaded yet" }
+            const u8 = new Uint8Array(full)
+            const s0 = frameStart(u8, Math.max(0, Math.floor(t * BPS))), e0 = Math.min(full.byteLength, s0 + Math.ceil(dur * BPS))
+            const buf = await decode(full.slice(s0, e0))
+            const c = { track, t: s0 / BPS, dur, buf }
             chunk = c
             return c
         }
-        const prefetch = (track: number, t: number) => { if (isIOS && ctx) getChunk(track, t, 1.6).catch(() => {}) }
+        const prefetch = (track: number, t: number) => { if (!isIOS) return; loadFull(track); if (ctx && fullFile[track]) getChunk(track, t, 1.6).catch(() => {}) }
         function rateCurve(fn: (k: number) => number, from: number, to: number) { const n = 64, a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.max(0.03, from + (to - from) * fn(i / (n - 1))); return a }
         const consumed = (a: Float32Array, dur: number) => { let x = 0; for (let i = 0; i < a.length; i++) x += a[i]; return (x / a.length) * dur }
         function playSnippet(buf: any, offset: number, rates: Float32Array, dur: number, fadeOut: boolean) {
@@ -170,10 +178,8 @@ export default function VinylPlayer(props: Props) {
                 const off = Math.max(0, audio.currentTime - c.t)
                 ours = true; audio.pause(); ours = false
                 playSnippet(c.buf, off, rates, 1.0, true)
-                const resumeAt = c.t + off + consumed(rates, 1.0)
-                try { audio.currentTime = resumeAt } catch (_) {}
                 chunk = null
-                rampMotor(0, 1.0, stopCurve, () => { done(); if (S.cur === track) prefetch(track, resumeAt) })
+                rampMotor(0, 1.0, stopCurve, () => { done(); if (S.cur === track) prefetch(track, audio.currentTime) })
             }).catch(plain)
         }
         /* tape start: snippet speeds up from slow while the normal player runs muted, then the normal player takes over */
@@ -187,9 +193,10 @@ export default function VinylPlayer(props: Props) {
             const plain = () => { audio.muted = false; S.motor = 1; S.ramp = null; if (p && p.catch) p.catch(() => { S.playing = false; push() }) }
             const start = (c: any) => {
                 if (!S.playing || S.cur !== track) return
+                const off = Math.max(0, t - c.t)
                 const from = Math.max(0, t + C - D)
-                try { audio.currentTime = from } catch (_) {}
-                playSnippet(c.buf, 0, rates, D, false)
+                try { if (Math.abs(audio.currentTime - from) > 0.05) audio.currentTime = from } catch (_) {}
+                playSnippet(c.buf, off, rates, D, false)
                 S.motor = 0.15; rampMotor(1, D, startCurve)
                 const unmuteIn = Math.max(0, t + C - from)
                 setTimeout(() => { if (S.playing && S.cur === track) audio.muted = false }, unmuteIn * 1000)
@@ -307,7 +314,7 @@ export default function VinylPlayer(props: Props) {
         const rampMotor = (to: number, dur: number, curve: (k: number) => number, done?: () => void) => { S.ramp = { from: S.motor, to, t0: performance.now(), dur: dur * 1000, curve, done } }
         function setOpen(v: boolean) { S.openTarget = v ? 1 : 0; if (!v) { S.focus = null; if (!disposed) setFocusUi(null) } if (!v) pause(); S.turnTarget = Math.round(S.rotY / (Math.PI * 2)) * Math.PI * 2; push() }
         function setSide(s: "A" | "B") { if (s === S.side) return; S.side = s; S.flipFrom = currentFlip(); S.flipTo = s === "A" ? 0 : Math.PI; S.flipP = 0; push() }
-        function load(i: number) { S.cur = i; ours = true; audio.src = base + "audio/" + String(i + 1).padStart(2, "0") + ".mp3"; S.note = ""; setTimeout(() => { ours = false }, 0); chunk = null; prefetch(i, 0); setUi((u) => ({ ...u, time: 0 })); push() }
+        function load(i: number) { S.cur = i; lastTime = 0; ours = true; audio.src = base + "audio/" + String(i + 1).padStart(2, "0") + ".mp3"; S.note = ""; setTimeout(() => { ours = false }, 0); chunk = null; prefetch(i, 0); setUi((u) => ({ ...u, time: 0 })); push() }
         const readyToSpin = () => S.openT >= 0.97 && S.flipP >= 1
         function go() {
             if (!S.playing) return
@@ -359,7 +366,17 @@ export default function VinylPlayer(props: Props) {
             if (running) audio.play().catch(() => {}); else play()
         }
         const onTime = () => { if (!disposed) setUi((u) => ({ ...u, time: audio.currentTime, dur: audio.duration || u.dur })) }
-        const onEnded = () => { if (S.cur < TRACKS.length - 1) select(S.cur + 1, true); else { pause(); setTimeout(() => { if (!S.playing) select(0, false) }, 1100) } }
+        audio.addEventListener("timeupdate", () => { if (!audio.paused && audio.currentTime > 0) lastTime = audio.currentTime })
+        const onEnded = () => {
+            const real = TRACKS[S.cur].dur
+            if (lastTime < real - 3) { /* Safari reported an end that did not happen: treat it as a stop */
+                S.playing = false; S.pendingGo = false; S.motor = 0; S.ramp = null; push()
+                try { audio.currentTime = lastTime } catch (_) {}
+                return
+            }
+            onRealEnd()
+        }
+        const onRealEnd = () => { if (S.cur < TRACKS.length - 1) select(S.cur + 1, true); else { pause(); setTimeout(() => { if (!S.playing) select(0, false) }, 1100) } }
         const onPauseEvt = () => { if (!ours && S.playing && !audio.ended && !S.ramp && !S.pendingGo && !S.unlocking) { S.playing = false; S.motor = 0; lastRate = 0; applyMotor(true); push() } }
         audio.addEventListener("timeupdate", onTime); audio.addEventListener("ended", onEnded); audio.addEventListener("pause", onPauseEvt)
 
