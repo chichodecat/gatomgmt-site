@@ -91,124 +91,98 @@ export default function VinylPlayer(props: Props) {
             playing: false, cur: 0, spinAngle: 0, motor: 0, ramp: null, pendingGo: false, unlocked: false,
             note: "", ready: false, focus: null,
         }
-        const audio = new Audio()
+        /* iPhone and iPad (every browser there is Safari underneath): normal web audio ignores speed and pitch changes and
+           fights with Web Audio, so there the whole song plays through Web Audio behind a small player with the same interface */
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || ((navigator as any).maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))
+        const audio: any = isIOS ? makeWebAudioPlayer() : new Audio()
         audio.preload = "metadata"
-        ;(audio as any).playsInline = true
-        audio.setAttribute("playsinline", "")
-        const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || ((navigator as any).maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))
+        if (!isIOS) { audio.playsInline = true; audio.setAttribute("playsinline", "") }
+        const mobile = !isIOS && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
         const MIN_RATE = mobile ? 0.25 : 0.08
         let lastRate = 1, lastRateAt = 0, ours = false, watchdog: any = null, lastTime = 0
+        function ensureCtx() { if (isIOS) audio.wake() }
 
-        /* iPhone and iPad: Safari ignores speed and pitch changes on normal audio, so the tape stop and start
-           play a short snippet of the song through Web Audio, where speed and pitch can be changed */
-        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || ((navigator as any).maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))
-        const BPS = 32000 // 256 kbps files: bytes per second
-        let ctx: any = null, chunk: any = null, stopTok = 0, tapeSrc: any = null
-        const fullFile: Record<number, ArrayBuffer> = {}, fullLoading: Record<number, Promise<ArrayBuffer | null> | null> = {}
-        function ensureCtx() {
-            if (!isIOS) return
-            try {
+        function makeWebAudioPlayer() {
+            const L: Record<string, Function[]> = {}
+            const emit = (n: string) => (L[n] || []).slice().forEach((f) => { try { f() } catch (_) {} })
+            let ctx: any = null, gain: any = null, node: any = null, buffer: any = null, loading: Promise<any> | null = null
+            let url = "", armed = false, playing = false, ended = false, pos = 0, segStart = 0, rate = 1, vol = 1, muted = false, timer: any = null
+            const cache: Record<string, ArrayBuffer> = {}
+            function getCtx() {
                 if (!ctx) {
                     try { if ((navigator as any).audioSession) (navigator as any).audioSession.type = "playback" } catch (_) {}
                     const AC = (window as any).AudioContext || (window as any).webkitAudioContext
-                    if (!AC) return
-                    ctx = new AC()
+                    ctx = new AC(); gain = ctx.createGain(); gain.connect(ctx.destination)
                 }
-                if (ctx.state !== "running") ctx.resume()
-            } catch (_) { ctx = null }
-        }
-        const trackUrl = (i: number) => base + "audio/" + String(i + 1).padStart(2, "0") + ".mp3"
-        const decode = (ab: ArrayBuffer) => new Promise<any>((res, rej) => { try { const p = ctx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej) } catch (e) { rej(e) } })
-        const within = (p: Promise<any>, ms: number) => Promise.race([p, new Promise((_, rj) => setTimeout(() => rj("timeout"), ms))])
-        /* whole song file for the current track, loaded once in the background (plain request, no partial ranges) */
-        function loadFull(track: number) {
-            if (fullFile[track] || fullLoading[track]) return fullLoading[track] || Promise.resolve(fullFile[track])
-            for (const k of Object.keys(fullFile)) if (+k !== track) delete fullFile[+k]
-            fullLoading[track] = fetch(trackUrl(track)).then((r) => { if (!r.ok) throw "fetch"; return r.arrayBuffer() })
-                .then((b) => { fullFile[track] = b; fullLoading[track] = null; return b }).catch(() => { fullLoading[track] = null; return null })
-            return fullLoading[track]
-        }
-        /* start a snippet exactly on an MP3 frame (sync word, with a second one where the next frame should be) */
-        function frameStart(u8: Uint8Array, from: number) {
-            for (let i = from; i < Math.min(u8.length - 4, from + 6000); i++) {
-                if (u8[i] === 0xff && (u8[i + 1] & 0xe0) === 0xe0) {
-                    const br = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0][u8[i + 2] >> 4] * 1000
-                    const sr = [44100, 48000, 32000, 0][(u8[i + 2] >> 2) & 3]
-                    if (!br || !sr) continue
-                    const len = Math.floor((144 * br) / sr) + ((u8[i + 2] >> 1) & 1)
-                    if (u8[i + len] === 0xff && (u8[i + len + 1] & 0xe0) === 0xe0) return i
-                }
+                return ctx
             }
-            return from
-        }
-        async function getChunk(track: number, t: number, dur: number) {
-            if (chunk && chunk.track === track && Math.abs(chunk.t - t) < 0.05 && chunk.dur >= dur) return chunk
-            if (!ctx) throw "no audio"
-            const full = fullFile[track]
-            if (!full) { loadFull(track); throw "not loaded yet" }
-            const u8 = new Uint8Array(full)
-            const s0 = frameStart(u8, Math.max(0, Math.floor(t * BPS))), e0 = Math.min(full.byteLength, s0 + Math.ceil(dur * BPS))
-            const buf = await decode(full.slice(s0, e0))
-            const c = { track, t: s0 / BPS, dur, buf }
-            chunk = c
-            return c
-        }
-        const prefetch = (track: number, t: number) => { if (!isIOS) return; loadFull(track); if (ctx && fullFile[track]) getChunk(track, t, 1.6).catch(() => {}) }
-        function rateCurve(fn: (k: number) => number, from: number, to: number) { const n = 64, a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.max(0.03, from + (to - from) * fn(i / (n - 1))); return a }
-        const consumed = (a: Float32Array, dur: number) => { let x = 0; for (let i = 0; i < a.length; i++) x += a[i]; return (x / a.length) * dur }
-        function playSnippet(buf: any, offset: number, rates: Float32Array, dur: number, fadeOut: boolean) {
-            try { tapeSrc && tapeSrc.stop() } catch (_) {}
-            const src = ctx.createBufferSource(), g = ctx.createGain()
-            src.buffer = buf; src.connect(g); g.connect(ctx.destination)
-            const now = ctx.currentTime + 0.02
-            src.playbackRate.setValueCurveAtTime(rates, now, dur)
-            if (fadeOut) { g.gain.setValueAtTime(1, now + dur * 0.55); g.gain.linearRampToValueAtTime(0, now + dur) }
-            src.start(now, Math.max(0, Math.min(offset, buf.duration - 0.05)))
-            src.stop(now + dur + 0.04)
-            tapeSrc = src
-        }
-        /* tape stop: keep playing until the snippet is ready, then hand over to it */
-        function iosStop(done: () => void) {
-            const tok = ++stopTok, track = S.cur, t0 = audio.currentTime
-            const rates = rateCurve(stopCurve, 1, 0)
-            const plain = () => { if (tok !== stopTok) return; ours = true; audio.pause(); ours = false; rampMotor(0, 1.0, stopCurve, done) }
-            if (!ctx || audio.paused) { plain(); return }
-            within(getChunk(track, t0, 2.2), 700).then((c: any) => {
-                if (tok !== stopTok || S.cur !== track) return
-                const off = Math.max(0, audio.currentTime - c.t)
-                ours = true; audio.pause(); ours = false
-                playSnippet(c.buf, off, rates, 1.0, true)
-                chunk = null
-                rampMotor(0, 1.0, stopCurve, () => { done(); if (S.cur === track) prefetch(track, audio.currentTime) })
-            }).catch(plain)
-        }
-        /* tape start: snippet speeds up from slow while the normal player runs muted, then the normal player takes over */
-        function iosGo() {
-            stopTok++
-            const track = S.cur, t = audio.currentTime
-            const rates = rateCurve(startCurve, 0.15, 1), D = 0.8, C = consumed(rates, D)
-            audio.playbackRate = 1; lastRate = 1
-            audio.muted = true
-            const p = audio.play()
-            const plain = () => { audio.muted = false; S.motor = 1; S.ramp = null; if (p && p.catch) p.catch(() => { S.playing = false; push() }) }
-            const start = (c: any) => {
-                if (!S.playing || S.cur !== track) return
-                const off = Math.max(0, t - c.t)
-                const from = Math.max(0, t + C - D)
-                try { if (Math.abs(audio.currentTime - from) > 0.05) audio.currentTime = from } catch (_) {}
-                playSnippet(c.buf, off, rates, D, false)
-                S.motor = 0.15; rampMotor(1, D, startCurve)
-                const unmuteIn = Math.max(0, t + C - from)
-                setTimeout(() => { if (S.playing && S.cur === track) audio.muted = false }, unmuteIn * 1000)
+            const decode = (ab: ArrayBuffer) => new Promise<any>((res, rej) => { try { const p = getCtx().decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej) } catch (e) { rej(e) } })
+            function load(): Promise<any> | null {
+                if (!url || !armed) return null
+                if (loading) return loading
+                const u = url
+                loading = (cache[u] ? Promise.resolve(cache[u]) : fetch(u).then((r) => { if (!r.ok) throw "fetch"; return r.arrayBuffer() }))
+                    .then((ab: ArrayBuffer) => { for (const k of Object.keys(cache)) if (k !== u) delete cache[k]; cache[u] = ab; return decode(ab.slice(0)) })
+                    .then((b: any) => { if (u === url) { buffer = b; emit("loadedmetadata") } return b })
+                    .catch((e: any) => { if (u === url) loading = null; throw e })
+                return loading
             }
-            if (!ctx) { plain(); return }
-            within(getChunk(track, t, 1.6), 700).then(start).catch(plain)
+            const now = () => (ctx ? ctx.currentTime : 0)
+            const cur = () => (playing ? pos + (now() - segStart) * rate : pos)
+            function startNode() {
+                const c = getCtx()
+                node = c.createBufferSource(); node.buffer = buffer; node.connect(gain)
+                node.playbackRate.setValueAtTime(rate, c.currentTime)
+                node.start(c.currentTime, Math.max(0, Math.min(pos, buffer.duration - 0.01)))
+                segStart = c.currentTime
+            }
+            function stopNode() { if (node) { try { node.stop() } catch (_) {} try { node.disconnect() } catch (_) {} node = null } }
+            function applyGain() { if (gain) gain.gain.setTargetAtTime(muted ? 0 : vol, now(), 0.015) }
+            function tick() {
+                if (!playing) return
+                if (buffer && cur() >= buffer.duration - 0.02) { pos = buffer.duration; playing = false; ended = true; stopNode(); clearInterval(timer); emit("timeupdate"); emit("ended"); return }
+                emit("timeupdate")
+            }
+            return {
+                preload: "", playsInline: true, setAttribute() {},
+                addEventListener(n: string, f: Function) { (L[n] = L[n] || []).push(f) },
+                removeEventListener(n: string, f: Function) { L[n] = (L[n] || []).filter((x) => x !== f) },
+                wake() { try { const c = getCtx(); if (c.state !== "running") c.resume() } catch (_) {} },
+                get src() { return url },
+                set src(u: string) { stopNode(); clearInterval(timer); playing = false; ended = false; pos = 0; buffer = null; loading = null; url = u || ""; load() },
+                get duration() { return buffer ? buffer.duration : NaN },
+                get paused() { return !playing },
+                get ended() { return ended },
+                get currentTime() { return cur() },
+                set currentTime(t: number) { const d = buffer ? buffer.duration : Infinity; pos = Math.max(0, Math.min(t, d)); ended = false; if (playing) { stopNode(); startNode() } emit("timeupdate") },
+                get playbackRate() { return rate },
+                set playbackRate(r: number) { if (playing) { pos = cur(); segStart = now() } rate = r; if (node) node.playbackRate.setValueAtTime(r, now()) },
+                get volume() { return vol },
+                set volume(v: number) { vol = v; applyGain() },
+                get muted() { return muted },
+                set muted(m: boolean) { muted = m; applyGain() },
+                play() {
+                    armed = true
+                    this.wake()
+                    const p = load()
+                    if (!p) return Promise.reject("no source")
+                    const u = url
+                    return p.then(() => {
+                        if (u !== url || playing) return
+                        if (ended || pos >= buffer.duration - 0.05) { pos = 0; ended = false }
+                        startNode(); playing = true; applyGain()
+                        clearInterval(timer); timer = setInterval(tick, 250)
+                        emit("play")
+                    })
+                },
+                pause() { if (!playing) return; pos = cur(); playing = false; stopNode(); clearInterval(timer); emit("pause") },
+                close() { stopNode(); clearInterval(timer); try { ctx && ctx.close() } catch (_) {} },
+            }
         }
         /* speed (and pitch) follow the motor; volume fades the slow tail where the browser allows it (iPhones ignore it).
            Phones glitch when the speed changes every frame, so there it changes in fewer, bigger steps */
         function applyMotor(force?: boolean) {
-            if (isIOS) { if (audio.playbackRate !== 1) { try { audio.playbackRate = 1 } catch (_) {} } lastRate = 1; return }
-            if (!mobile) { try { audio.volume = Math.min(1, S.motor / 0.3) } catch (_) {} }
+            if (!mobile || isIOS) { try { audio.volume = Math.min(1, S.motor / 0.3) } catch (_) {} }
             const rate = Math.max(MIN_RATE, Math.min(1, S.motor))
             const now = performance.now(), step = mobile ? 0.06 : 0.01, every = mobile ? 90 : 0
             if (force || rate === 1 || (Math.abs(rate - lastRate) >= step && now - lastRateAt >= every)) {
@@ -314,12 +288,11 @@ export default function VinylPlayer(props: Props) {
         const rampMotor = (to: number, dur: number, curve: (k: number) => number, done?: () => void) => { S.ramp = { from: S.motor, to, t0: performance.now(), dur: dur * 1000, curve, done } }
         function setOpen(v: boolean) { S.openTarget = v ? 1 : 0; if (!v) { S.focus = null; if (!disposed) setFocusUi(null) } if (!v) pause(); S.turnTarget = Math.round(S.rotY / (Math.PI * 2)) * Math.PI * 2; push() }
         function setSide(s: "A" | "B") { if (s === S.side) return; S.side = s; S.flipFrom = currentFlip(); S.flipTo = s === "A" ? 0 : Math.PI; S.flipP = 0; push() }
-        function load(i: number) { S.cur = i; lastTime = 0; ours = true; audio.src = base + "audio/" + String(i + 1).padStart(2, "0") + ".mp3"; S.note = ""; setTimeout(() => { ours = false }, 0); chunk = null; prefetch(i, 0); setUi((u) => ({ ...u, time: 0 })); push() }
+        function load(i: number) { S.cur = i; lastTime = 0; ours = true; audio.src = base + "audio/" + String(i + 1).padStart(2, "0") + ".mp3"; S.note = ""; setTimeout(() => { ours = false }, 0);  setUi((u) => ({ ...u, time: 0 })); push() }
         const readyToSpin = () => S.openT >= 0.97 && S.flipP >= 1
         function go() {
             if (!S.playing) return
             S.unlocking = false
-            if (isIOS) { iosGo(); return }
             audio.muted = false
             ;(audio as any).preservesPitch = false; (audio as any).mozPreservesPitch = false; (audio as any).webkitPreservesPitch = false
             applyMotor(true)
@@ -335,11 +308,10 @@ export default function VinylPlayer(props: Props) {
         function play() {
             if (S.openTarget < 1) setOpen(true)
             S.playing = true; push()
-            ensureCtx(); stopTok++
-            if (isIOS && !readyToSpin()) prefetch(S.cur, audio.currentTime)
+            ensureCtx()
             if (readyToSpin()) { go(); return }
             /* record still coming out: unlock audio inside this tap so it may start a moment later, without pausing it if it already started */
-            if (!S.unlocked && audio.paused) {
+            if (!isIOS && !S.unlocked && audio.paused) {
                 S.unlocking = true; audio.muted = true
                 audio.play().then(() => { S.unlocked = true; if (S.unlocking) { ours = true; audio.pause(); ours = false } audio.muted = false; S.unlocking = false }).catch(() => { audio.muted = false; S.unlocking = false })
             }
@@ -347,7 +319,6 @@ export default function VinylPlayer(props: Props) {
         }
         function pause() {
             S.playing = false; S.pendingGo = false; push()
-            if (isIOS) { ensureCtx(); iosStop(() => { if (!S.playing) S.motor = 0 }); return }
             rampMotor(0, 1.0, stopCurve, () => { if (!S.playing) { ours = true; audio.pause(); ours = false; S.motor = 0; applyMotor(true) } })
         }
         function select(i: number, autoplay: boolean) {
@@ -355,7 +326,6 @@ export default function VinylPlayer(props: Props) {
             if (S.openTarget < 1) setOpen(true)
             if (needFlip && S.playing && S.motor > 0.05) {
                 S.pendingGo = false
-                if (isIOS) { ensureCtx(); iosStop(() => { load(i); setSide(t.side as any); if (autoplay && S.playing) S.pendingGo = true; else { S.playing = false; push() } }); return }
                 rampMotor(0, 1.0, stopCurve, () => { ours = true; audio.pause(); ours = false; load(i); setSide(t.side as any); if (autoplay && S.playing) S.pendingGo = true; else { S.playing = false; push() } })
                 return
             }
@@ -473,7 +443,7 @@ export default function VinylPlayer(props: Props) {
             disposed = true
             renderer.setAnimationLoop(null); ro.disconnect()
             cv.removeEventListener("pointerdown", onDown); cv.removeEventListener("pointermove", onMove); cv.removeEventListener("pointerup", onUp); cv.removeEventListener("pointercancel", onUp)
-            audio.pause(); audio.removeEventListener("timeupdate", onTime); audio.removeEventListener("ended", onEnded); audio.removeEventListener("pause", onPauseEvt); clearTimeout(watchdog); try { tapeSrc && tapeSrc.stop() } catch (_) {} try { ctx && ctx.close() } catch (_) {} audio.src = ""
+            audio.pause(); audio.removeEventListener("timeupdate", onTime); audio.removeEventListener("ended", onEnded); audio.removeEventListener("pause", onPauseEvt); clearTimeout(watchdog); audio.src = ""; if (isIOS) audio.close()
             renderer.dispose(); pmrem.dispose(); if (cv.parentNode) cv.parentNode.removeChild(cv)
             engine.current = null
         }
