@@ -93,31 +93,18 @@ export default function VinylPlayer(props: Props) {
         }
         const audio = new Audio()
         audio.preload = "metadata"
-        audio.crossOrigin = "anonymous"
         ;(audio as any).playsInline = true
         audio.setAttribute("playsinline", "")
         const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || ((navigator as any).maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))
         const MIN_RATE = mobile ? 0.25 : 0.08
-        let ctx: AudioContext | null = null, gain: GainNode | null = null, lastRate = 1, lastRateAt = 0
-        function ensureCtx() {
-            try {
-                if (!ctx) {
-                    /* keep playing with the iPhone silent switch on, like a normal audio player */
-                    try { if ((navigator as any).audioSession) (navigator as any).audioSession.type = "playback" } catch (_) {}
-                    const AC = (window as any).AudioContext || (window as any).webkitAudioContext
-                    if (!AC) return
-                    ctx = new AC(); gain = ctx!.createGain()
-                    ctx!.createMediaElementSource(audio).connect(gain); gain.connect(ctx!.destination)
-                }
-                if (ctx && ctx.state === "suspended") ctx.resume()
-            } catch (_) { ctx = null; gain = null }
-        }
-        /* level follows the motor so the very slow tail fades out; speed changes are throttled because phones glitch when the rate changes every frame */
+        let lastRate = 1, lastRateAt = 0, ours = false, watchdog: any = null
+        function ensureCtx() {}
+        /* speed (and pitch) follow the motor; volume fades the slow tail where the browser allows it (iPhones ignore it).
+           Phones glitch when the speed changes every frame, so there it changes in fewer, bigger steps */
         function applyMotor(force?: boolean) {
-            const lvl = Math.min(1, S.motor / 0.3)
-            if (gain && ctx) gain.gain.setTargetAtTime(lvl, ctx.currentTime, 0.03); else { try { audio.volume = lvl } catch (_) {} }
+            if (!mobile) { try { audio.volume = Math.min(1, S.motor / 0.3) } catch (_) {} }
             const rate = Math.max(MIN_RATE, Math.min(1, S.motor))
-            const now = performance.now(), step = mobile ? 0.04 : 0.01, every = mobile ? 70 : 0
+            const now = performance.now(), step = mobile ? 0.06 : 0.01, every = mobile ? 90 : 0
             if (force || rate === 1 || (Math.abs(rate - lastRate) >= step && now - lastRateAt >= every)) {
                 if (Math.abs(rate - lastRate) > 0.0001) { try { audio.playbackRate = rate } catch (_) {} lastRate = rate; lastRateAt = now }
             }
@@ -221,14 +208,21 @@ export default function VinylPlayer(props: Props) {
         const rampMotor = (to: number, dur: number, curve: (k: number) => number, done?: () => void) => { S.ramp = { from: S.motor, to, t0: performance.now(), dur: dur * 1000, curve, done } }
         function setOpen(v: boolean) { S.openTarget = v ? 1 : 0; if (!v) { S.focus = null; if (!disposed) setFocusUi(null) } if (!v) pause(); S.turnTarget = Math.round(S.rotY / (Math.PI * 2)) * Math.PI * 2; push() }
         function setSide(s: "A" | "B") { if (s === S.side) return; S.side = s; S.flipFrom = currentFlip(); S.flipTo = s === "A" ? 0 : Math.PI; S.flipP = 0; push() }
-        function load(i: number) { S.cur = i; audio.src = base + "audio/" + String(i + 1).padStart(2, "0") + ".mp3"; S.note = ""; setUi((u) => ({ ...u, time: 0 })); push() }
+        function load(i: number) { S.cur = i; ours = true; audio.src = base + "audio/" + String(i + 1).padStart(2, "0") + ".mp3"; S.note = ""; setTimeout(() => { ours = false }, 0); setUi((u) => ({ ...u, time: 0 })); push() }
         const readyToSpin = () => S.openT >= 0.97 && S.flipP >= 1
         function go() {
             if (!S.playing) return
             S.unlocking = false; audio.muted = false
             ;(audio as any).preservesPitch = false; (audio as any).mozPreservesPitch = false; (audio as any).webkitPreservesPitch = false
             applyMotor(true)
-            audio.play().then(() => { if (S.playing) rampMotor(1, 0.8, startCurve) }).catch(() => { S.playing = false; push() })
+            const startAt = audio.currentTime
+            const fallback = () => { S.motor = 1; S.ramp = null; lastRate = 0; applyMotor(true); audio.play().catch(() => { S.playing = false; push() }) }
+            audio.play().then(() => {
+                if (!S.playing) return
+                rampMotor(1, 0.8, startCurve)
+                clearTimeout(watchdog)
+                watchdog = setTimeout(() => { if (S.playing && (audio.paused || audio.currentTime <= startAt + 0.05)) fallback() }, 1500)
+            }).catch(() => { if (S.playing) fallback() })
         }
         function play() {
             if (S.openTarget < 1) setOpen(true)
@@ -238,17 +232,17 @@ export default function VinylPlayer(props: Props) {
             /* record still coming out: unlock audio inside this tap so it may start a moment later, without pausing it if it already started */
             if (!S.unlocked && audio.paused) {
                 S.unlocking = true; audio.muted = true
-                audio.play().then(() => { S.unlocked = true; if (S.unlocking) audio.pause(); audio.muted = false; S.unlocking = false }).catch(() => { audio.muted = false; S.unlocking = false })
+                audio.play().then(() => { S.unlocked = true; if (S.unlocking) { ours = true; audio.pause(); ours = false } audio.muted = false; S.unlocking = false }).catch(() => { audio.muted = false; S.unlocking = false })
             }
             S.pendingGo = true
         }
-        function pause() { S.playing = false; S.pendingGo = false; push(); rampMotor(0, 1.0, stopCurve, () => { if (!S.playing) { audio.pause(); S.motor = 0; applyMotor(true) } }) }
+        function pause() { S.playing = false; S.pendingGo = false; push(); rampMotor(0, 1.0, stopCurve, () => { if (!S.playing) { ours = true; audio.pause(); ours = false; S.motor = 0; applyMotor(true) } }) }
         function select(i: number, autoplay: boolean) {
             const t = TRACKS[i], needFlip = t.side !== S.side
             if (S.openTarget < 1) setOpen(true)
             if (needFlip && S.playing && S.motor > 0.05) {
                 S.pendingGo = false
-                rampMotor(0, 1.0, stopCurve, () => { audio.pause(); load(i); setSide(t.side as any); if (autoplay && S.playing) S.pendingGo = true; else { S.playing = false; push() } })
+                rampMotor(0, 1.0, stopCurve, () => { ours = true; audio.pause(); ours = false; load(i); setSide(t.side as any); if (autoplay && S.playing) S.pendingGo = true; else { S.playing = false; push() } })
                 return
             }
             const running = S.playing && S.motor > 0.9 && !needFlip
@@ -259,7 +253,8 @@ export default function VinylPlayer(props: Props) {
         }
         const onTime = () => { if (!disposed) setUi((u) => ({ ...u, time: audio.currentTime, dur: audio.duration || u.dur })) }
         const onEnded = () => { if (S.cur < TRACKS.length - 1) select(S.cur + 1, true); else { pause(); setTimeout(() => { if (!S.playing) select(0, false) }, 1100) } }
-        audio.addEventListener("timeupdate", onTime); audio.addEventListener("ended", onEnded)
+        const onPauseEvt = () => { if (!ours && S.playing && !audio.ended && !S.ramp && !S.pendingGo && !S.unlocking) { S.playing = false; S.motor = 0; lastRate = 0; applyMotor(true); push() } }
+        audio.addEventListener("timeupdate", onTime); audio.addEventListener("ended", onEnded); audio.addEventListener("pause", onPauseEvt)
 
         /* pointer: drag to turn, click to open, play or read the insert */
         const cv = renderer.domElement, ray = new THREE.Raycaster(), ptr = new THREE.Vector2()
@@ -354,8 +349,7 @@ export default function VinylPlayer(props: Props) {
             disposed = true
             renderer.setAnimationLoop(null); ro.disconnect()
             cv.removeEventListener("pointerdown", onDown); cv.removeEventListener("pointermove", onMove); cv.removeEventListener("pointerup", onUp); cv.removeEventListener("pointercancel", onUp)
-            audio.pause(); audio.removeEventListener("timeupdate", onTime); audio.removeEventListener("ended", onEnded); audio.src = ""
-            try { ctx && ctx.close() } catch (_) {}
+            audio.pause(); audio.removeEventListener("timeupdate", onTime); audio.removeEventListener("ended", onEnded); audio.removeEventListener("pause", onPauseEvt); clearTimeout(watchdog); audio.src = ""
             renderer.dispose(); pmrem.dispose(); if (cv.parentNode) cv.parentNode.removeChild(cv)
             engine.current = null
         }
@@ -420,8 +414,8 @@ export default function VinylPlayer(props: Props) {
                 )}
             </div>
             {narrow && !isCanvas && (
-                <button aria-label="See the record big" onClick={() => setBig(true)} style={{ marginTop: 6, width: 44, height: 44, borderRadius: "50%", border: "1px solid " + green, background: "none", color: green, cursor: "pointer", display: "grid", placeItems: "center" }}>
-                    <svg viewBox="0 0 24 24" width={20} height={20} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6" /></svg>
+                <button aria-label="See the record big" onClick={() => setBig(true)} style={{ marginTop: 6, width: 35, height: 35, borderRadius: "50%", border: "1px solid " + green, background: "none", color: green, cursor: "pointer", display: "grid", placeItems: "center" }}>
+                    <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6" /></svg>
                 </button>
             )}
             <div style={{ display: "flex", gap: 28, justifyContent: "center", flexWrap: "wrap", fontSize: 18 }}>
